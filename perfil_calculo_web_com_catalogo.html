@@ -1,0 +1,152 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Verificação de Perfil I</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial, margin: 30px; max-width: 600px; }
+    input, button, label { margin: 8px 0; padding: 8px; width: 100%; font-size: 16px; }
+    button { cursor: pointer; background: #0066cc; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #004c99; }
+    h1 { font-size: 24px; }
+    .resultado { margin-top: 20px; background: #f9f9f9; padding: 15px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Verificação de Perfil I</h1>
+
+  <label>Carga distribuída (kg/m):</label>
+  <input type="number" id="q">
+
+  <label>Vão (m):</label>
+  <input type="number" id="l">
+
+  
+<label>Escolha o perfil:</label>
+<select id="perfil" onchange="preencherPerfil()">
+  <option value="">-- Selecione --</option>
+  <option value="I200">Perfil I 200</option>
+  <option value="I300">Perfil I 300</option>
+  <option value="I400">Perfil I 400</option>
+</select>
+
+<h2>Dimensões do perfil (cm)</h2>
+  <label>bf (largura da mesa):</label>
+  <input type="number" id="bf">
+
+  <label>hf (altura da mesa):</label>
+  <input type="number" id="hf">
+
+  <label>h_total (altura total do perfil):</label>
+  <input type="number" id="h_total">
+
+  <label>bw (espessura da alma):</label>
+  <input type="number" id="bw">
+
+  <button onclick="verificarPerfil()">Verificar Perfil</button>
+  <button onclick="exportarPDF()">Exportar PDF</button>
+  <button onclick="exportarExcel()">Exportar Excel</button>
+
+  <div class="resultado" id="resultado"></div>
+
+  <script>
+    let resultadoGlobal = "";
+
+    
+  const perfis = {
+    I200: { bf: 100, hf: 8.0, h_total: 200, bw: 5.0 },
+    I300: { bf: 150, hf: 10.0, h_total: 300, bw: 6.0 },
+    I400: { bf: 160, hf: 12.0, h_total: 400, bw: 8.0 },
+  };
+
+  function preencherPerfil() {
+    const perfil = document.getElementById("perfil").value;
+    if (perfis[perfil]) {
+      const { bf, hf, h_total, bw } = perfis[perfil];
+      document.getElementById("bf").value = bf;
+      document.getElementById("hf").value = hf;
+      document.getElementById("h_total").value = h_total;
+      document.getElementById("bw").value = bw;
+    }
+  }
+
+
+    function verificarPerfil() {
+      const q = parseFloat(document.getElementById("q").value);
+      const l = parseFloat(document.getElementById("l").value);
+      const bf = parseFloat(document.getElementById("bf").value);
+      const hf = parseFloat(document.getElementById("hf").value);
+      const h_total = parseFloat(document.getElementById("h_total").value);
+      const bw = parseFloat(document.getElementById("bw").value);
+
+      const hw = h_total - 2 * hf;
+      if (hw <= 0) {
+        document.getElementById("resultado").innerHTML = "❌ Altura da alma inválida.";
+        return;
+      }
+
+      const E = 20000; // kN/cm²
+      const q_kN_cm = q / 10000;
+      const l_cm = l * 100;
+      const f = l_cm / 350;
+      const I_necessaria = (5 * q_kN_cm * Math.pow(l_cm, 4)) / (384 * E * f);
+
+      const m = q * Math.pow(l, 2) / 8;
+      const v = q * l / 2;
+
+      const Af = bf * hf;
+      const Aw = bw * hw;
+      const A_total = 2 * Af + Aw;
+      const peso_por_metro = A_total * 0.785;
+      const df = (h_total / 2) - (hf / 2);
+      const Ix = 2 * (bf * Math.pow(hf, 3)) / 12 + (bw * Math.pow(hw, 3)) / 12 + 2 * Af * Math.pow(df, 2);
+
+      const atende = Ix >= I_necessaria;
+
+      resultadoGlobal = [
+        ["Carga distribuída", q.toFixed(2), "kg/m"],
+        ["Vão", l.toFixed(2), "m"],
+        ["Inércia necessária", I_necessaria.toFixed(2), "cm⁴"],
+        ["Inércia do perfil", Ix.toFixed(2), "cm⁴"],
+        ["Área da seção", A_total.toFixed(2), "cm²"],
+        ["Peso por metro", peso_por_metro.toFixed(2), "kg/m"],
+        ["Momento Fletor Máx.", m.toFixed(2), "kg·m"],
+        ["Esforço Cortante Máx.", v.toFixed(2), "kg"],
+        ["Esforço Cortante Máx.", (v / 100).toFixed(2), "kN"],
+        ["Resultado", atende ? "PERFIL ADEQUADO" : "PERFIL INADEQUADO", ""],
+      ];
+
+      let html = `<strong>${atende ? "✅ O perfil atende!" : "❌ O perfil NÃO atende."}</strong><br><br>`;
+      for (let linha of resultadoGlobal) {
+        html += `<b>${linha[0]}:</b> ${linha[1]} ${linha[2]}<br>`;
+      }
+      document.getElementById("resultado").innerHTML = html;
+    }
+
+    function exportarPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(14);
+      doc.text("Relatório de Verificação de Perfil I", 20, 20);
+      doc.setFontSize(12);
+      let y = 30;
+      for (let linha of resultadoGlobal) {
+        doc.text(`${linha[0]}: ${linha[1]} ${linha[2]}`, 20, y);
+        y += 8;
+      }
+      doc.save("relatorio_perfil.pdf");
+    }
+
+    function exportarExcel() {
+      const wb = XLSX.utils.book_new();
+      const ws_data = [["Descrição", "Valor", "Unidade"], ...resultadoGlobal];
+      const ws = XLSX.utils.aoa_to_sheet(ws_data);
+      XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+      XLSX.writeFile(wb, "relatorio_perfil.xlsx");
+    }
+  </script>
+</body>
+</html>
